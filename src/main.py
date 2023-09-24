@@ -10,11 +10,11 @@ Hyperparamters:
         assigned importance to neighbor based on similarity
 '''
 
-# todo: figure out pre-processinig normalization data (before we split our values?)
-# todo: figure out weighted knn
+# > Priority:
 # todo: figure out how to score each test case
-# todo: figure out how to plot performances (WCSS vs k?)
 # todo: work on notebook
+# todo: figure out weighted knn
+# todo: figure out how to plot performances (WCSS vs k?)
 
 import time
 from datetime import datetime
@@ -185,15 +185,24 @@ def main():
     test_set  = read_input('../test/test_set.csv')
     knn_graph = np.zeros((train_set['width'], test_set['width']), dtype = int)
 
-    # todo: find where to call these, should we split our training data before or after? does it matter?
+    #> pre-processing data | y = log(x + 1)
+    train_set['data'] = np.log1p(train_set['data'])
+    test_set['data']  = np.log1p(test_set['data'])
+
+    #> pre-processing data | y < 10
+    # train_set['data'] = np.clip(train_set['data'], a_min = None, a_max = 10)
+    # test_set['data']  = np.clip(test_set['data'], a_min = None, a_max = 10)
+
+    # note: using y = log(x + 1) reduces our max values to less than 5
+    # print(np.argwhere(train_set['data'] > 5))
+    # print(np.argwhere(test_set['data'] > 5))
+
+    # todo: creating our cross-validation sets should go AFTER pre-processing
     # shuffled_set = split(train_set['data'])
     # produceTestSet(shuffled_set)
     # print("testing..!")
-    # exit()
 
-    # todo: pre-process, right now its only clipping our values at max of 10
-    train_set['data'] = np.clip(train_set['data'], a_min = None, a_max = 10)
-    test_set['data']  = np.clip(test_set['data'], a_min = None, a_max = 10)
+    # exit()
 
     #> hyper-parameter lists
     metrics  = ['euclidean', 'cosine', 'jaccard']
