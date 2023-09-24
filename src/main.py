@@ -17,53 +17,7 @@ import numpy as np
 from rich.progress import track
 from common import *
 
-# todo: pre-process to normalize data to variance stable transformations
-
 ground_truth = 5
-
-'''
-    METRIC FUNCTIONS ----------------------------
-'''
-
-def euclidean_distance(x, y):
-    return np.sqrt(np.sum(np.square(np.subtract(x, y))))
-
-def cosine_distance(x, y):
-    a = np.sum(np.multiply(x, y))
-    b = np.multiply( np.sqrt(np.sum( np.square(x))), np.sqrt( np.sum( np.square(y))))
-    return 1 - np.divide(a, b)
-
-def jaccard_distance(x, y):
-    a = np.sum(np.multiply(x, y))
-    b = np.add(np.sum(np.square(x)), np.sum(np.square(y)))
-    return np.divide(a, np.subtract(b, a))
-
-def absolute_difference(x, y):
-    return np.subtract(x, y)
-
-'''
-    KNN ALGORITHM -------------------------------
-'''
-
-def KNN(train_set, test_sample, k):
-    neighbor_distances = np.zeros(train_set['width'])
-    nearest_neighbors  = np.zeros(train_set['width'], dtype = int)
-
-    for column in train_set['columns']:
-        neighbor_distances[column] = euclidean_distance(train_set['data'][:,column], test_sample)
-
-    nearest_index = np.argpartition(neighbor_distances, k)[:k]
-
-    # for i in range(len(neighbor_distances)):
-        # nearest_neighbors[i] = 1 if neighbor_distances[i] in neighbor_distances[nearest_index] else 0
-    for i in nearest_index:
-        nearest_neighbors[i] = 1
-
-    # print(f'nearest neighbors: {nearest_neighbors[nearest_index]}')
-    # print(f'assert sum is k = {np.sum(nearest_neighbors)}')
-    assert np.sum(nearest_neighbors) == k
-
-    return nearest_neighbors
 
 '''
     CONFIGURATION -------------------------------
@@ -84,6 +38,52 @@ def configure_testcases(metrics, k_values):
             test_cases.append(test_case)
 
     return test_cases
+
+'''
+    KNN ALGORITHM -------------------------------
+'''
+
+def euclidean_distance(x, y):
+    return np.sqrt(np.sum(np.square(np.subtract(x, y))))
+
+def cosine_distance(x, y):
+    a = np.sum(np.multiply(x, y))
+    b = np.multiply( np.sqrt(np.sum( np.square(x))), np.sqrt( np.sum( np.square(y))))
+    return 1 - np.divide(a, b)
+
+def jaccard_distance(x, y):
+    a = np.sum(np.multiply(x, y))
+    b = np.add(np.sum(np.square(x)), np.sum(np.square(y)))
+    return np.divide(a, np.subtract(b, a))
+
+def absolute_difference(x, y):
+    # todo: what should we do here?
+    return np.subtract(x, y)
+
+def KNN(train_set, test_sample, metric, k):
+    neighbor_distances = np.zeros(train_set['width'])
+    nearest_neighbors  = np.zeros(train_set['width'], dtype = int)
+
+    for column in train_set['columns']:
+        if metric == 'euclidean':
+            neighbor_distances[column] = euclidean_distance(train_set['data'][:,column], test_sample)
+        if metric == 'cosine':
+            neighbor_distances[column] = cosine_distance(train_set['data'][:,column], test_sample)
+        if metric == 'jaccard':
+            neighbor_distances[column] = jaccard_distance(train_set['data'][:,column], test_sample)
+
+    nearest_index = np.argpartition(neighbor_distances, k)[:k]
+
+    # for i in range(len(neighbor_distances)):
+        # nearest_neighbors[i] = 1 if neighbor_distances[i] in neighbor_distances[nearest_index] else 0
+    for i in nearest_index:
+        nearest_neighbors[i] = 1
+
+    # print(f'nearest neighbors: {nearest_neighbors[nearest_index]}')
+    # print(f'assert sum is k = {np.sum(nearest_neighbors)}')
+    assert np.sum(nearest_neighbors) == k
+
+    return nearest_neighbors
 
 '''
     CROSS-VALIDATION ----------------------------
@@ -108,7 +108,7 @@ def run_testcase(test_case, train_set, test_set, knn_graph):
 
     #> for all test_set samples/columns, choose top 5 in knn_centroids that are also 0 in test_set sample/column
     for column in track(test_set['columns']):
-        knn_graph[:,column] = KNN(train_set, test_set['data'][:,column], test_case['parameters']['k'])
+        knn_graph[:,column] = KNN(train_set, test_set['data'][:,column], test_case['parameters']['metric'],test_case['parameters']['k'])
         knn_centroids = np.zeros(train_set['height'])
 
         #> find our index of all k 1's in `knn_graph` column

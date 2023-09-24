@@ -1,4 +1,4 @@
-# updates ENTIRE ECE_MSE folder
+#> updates entire GitHub repository
 
 git add .
 
@@ -13,4 +13,4 @@ git push origin $branch
 
 read
 
-# remember to press enter afterwards...
+# note: remember to press enter afterwards...
