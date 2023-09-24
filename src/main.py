@@ -10,10 +10,22 @@ Hyperparamters:
         assigned importance to neighbor based on similarity
 '''
 
+# todo: figure out pre-processinig normalization data (before we split our values?)
+# todo: figure out weighted knn
+# todo: figure out how to score each test case
+# todo: figure out how to plot performances (WCSS vs k?)
+# todo: work on notebook
+
 import time
 from datetime import datetime
 import numpy as np
 from numba import jit, cuda
+
+# note: added this to suppress warnings
+import sys
+if not sys.warnoptions:
+    import warnings
+    warnings.simplefilter("ignore")
 
 from rich.progress import track
 from common import *
@@ -95,6 +107,31 @@ def KNN(train_set, test_sample, metric, k):
     CROSS-VALIDATION ----------------------------
 '''
 
+# split will randomize the columns and split the trainset into five subsets.
+def split(grid):
+    grid = np.transpose(grid)
+    np.random.shuffle(grid)
+    grid = np.transpose(grid)
+    res = [grid[:, 0:2966], grid[:, 2966:5932], grid[:, 5932: 8899],
+            grid[:, 8899:11866], grid[:, 11866:14832]]
+
+    return res
+
+def produceTestSet(grid):
+    test1 = np.concatenate((grid[0], grid[1], grid[2], grid[3]), 1)
+    test2 = np.concatenate((grid[0], grid[1], grid[2], grid[4]), 1)
+    test3 = np.concatenate((grid[0], grid[1], grid[3], grid[4]), 1)
+    test4 = np.concatenate((grid[0], grid[2], grid[3], grid[4]), 1)
+    test5 = np.concatenate((grid[1], grid[2], grid[3], grid[4]), 1)
+
+    res = [test1, test2, test3, test4, test5]
+    index = 1
+    for test in res:
+        with open(f'../test/{index}.csv', mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerows(test)
+        index += 1
+
 def cross_validate(test_cases):
     raise NotImplementedError
 
@@ -148,15 +185,19 @@ def main():
     test_set  = read_input('../test/test_set.csv')
     knn_graph = np.zeros((train_set['width'], test_set['width']), dtype = int)
 
+    # todo: find where to call these, should we split our training data before or after? does it matter?
+    # shuffled_set = split(train_set['data'])
+    # produceTestSet(shuffled_set)
+    # print("testing..!")
+    # exit()
+
     # todo: pre-process, right now its only clipping our values at max of 10
     train_set['data'] = np.clip(train_set['data'], a_min = None, a_max = 10)
     test_set['data']  = np.clip(test_set['data'], a_min = None, a_max = 10)
 
     #> hyper-parameter lists
-    # metrics  = ['euclidean', 'cosine', 'jaccard']
-    # k_values = [20, 40, 60, 80, 100]
-    metrics  = ['euclidean']
-    k_values = [20]
+    metrics  = ['euclidean', 'cosine', 'jaccard']
+    k_values = [20, 40, 60, 80, 100]
 
     #> create a list of all test cases to keep track of optimized parameters
     test_cases = configure_testcases(metrics, k_values)
