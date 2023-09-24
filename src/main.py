@@ -51,6 +51,7 @@ def configure_testcases(metrics, k_values):
 
     return test_cases
 
+@jit(target_backend='cuda')
 def preprocess(data_set, preprocess_method):
     if preprocess_method == 'normalizing': #> pre-processing data | y = y / |y|
         data_set = (data_set - data_set.min()) / (data_set.max() - data_set.min())
@@ -93,23 +94,24 @@ def KNN(train_set, test_sample, metric, k):
     neighbor_distances = np.zeros(train_set['width'])
     nearest_neighbors  = np.zeros(train_set['width'], dtype = int)
 
-    for column in train_set['columns']:
+    for i in train_set['columns']:
         if metric == 'euclidean':
-            neighbor_distances[column] = euclidean_distance(train_set['data'][:,column], test_sample)
+            neighbor_distances[i] = euclidean_distance(train_set['data'][:,i], test_sample)
+            nearest_index = np.argpartition(neighbor_distances, k)[:k] #> get the smallest
         if metric == 'cosine':
-            neighbor_distances[column] = cosine_distance(train_set['data'][:,column], test_sample)
+            neighbor_distances[i] = cosine_distance(train_set['data'][:,i], test_sample)
+            nearest_index = np.argpartition(neighbor_distances, -k)[-k:] #> get the largest
         if metric == 'jaccard':
-            neighbor_distances[column] = jaccard_distance(train_set['data'][:,column], test_sample)
+            neighbor_distances[i] = jaccard_distance(train_set['data'][:,i], test_sample)
+            nearest_index = np.argpartition(neighbor_distances, -k)[-k:] #> get the largest
 
-    nearest_index = np.argpartition(neighbor_distances, k)[:k]
-
-    # for i in range(len(neighbor_distances)):
-        # nearest_neighbors[i] = 1 if neighbor_distances[i] in neighbor_distances[nearest_index] else 0
     for i in nearest_index:
         nearest_neighbors[i] = 1
 
-    # print(f'nearest neighbors: {nearest_neighbors[nearest_index]}')
-    # print(f'assert sum is k = {np.sum(nearest_neighbors)}')
+    # note: these two prints are the same for arg sort and arg partition
+    # print(f'arg partition: {neighbor_distances[nearest_neighbors == 1]}')
+    # print(f'arg sort: {neighbor_distances[np.argsort(neighbor_distances)[-k:]]}')
+
     assert np.sum(nearest_neighbors) == k
 
     return nearest_neighbors
@@ -152,12 +154,8 @@ def cross_validate(test_cases):
 
 def run_testcase(test_case, train_set, test_set, knn_graph):
 
-    print(f"running test case {test_case['parameters']['metric']} distance with {test_case['parameters']['k']} neighbors...")
+    print(f"\nrunning test case {test_case['parameters']['metric']} distance with {test_case['parameters']['k']} neighbors...")
 
-    # knn_graph     = np.zeros((train_set['width'], test_set['width']), dtype = int)
-    # knn_index     = np.zeros((train_set['width'], k), dtype = int)
-    # knn_centroids = np.zeros(train_set['height'])
-    # recommend_set = np.zeros(test_set['data'].shape, dtype = int)
     test_case['recommendation'] = np.zeros(test_set['data'].shape, dtype = int)
 
     #> for all test_set samples/columns, choose top 5 in knn_centroids that are also 0 in test_set sample/column
@@ -193,25 +191,21 @@ def main():
 
     #> hyper-parameter lists
     all_preprocess_methods = ['normalizing', 'logarithms', 'clipping']
-    selected_preprocess_method = 'normalizing'
+    selected_preprocess_method = all_preprocess_methods[0]
 
-    metrics  = ['euclidean', 'cosine', 'jaccard']
-    k_values = [20, 40, 60, 80, 100]
+    # metrics  = ['euclidean', 'cosine', 'jaccard']
+    # k_values = [20, 40, 60, 80, 100]
+    metrics  = ['euclidean']
+    k_values = [20] # scored a 0.11010
 
     print(f'\nreadinng in our train and test sets...\n')
     train_set = read_input('../train/train_set.csv')
     test_set  = read_input('../test/test_set.csv')
     knn_graph = np.zeros((train_set['width'], test_set['width']), dtype = int)
 
-    print(f"before pre-processing train mean: {train_set['data'].mean()}")
-    print(f"before pre-processing test mean: {test_set['data'].mean()}")
-
     print(f'\npre-processing our data to use {selected_preprocess_method} on our train and test sets...\n')
     train_set['data'] = preprocess(train_set['data'], selected_preprocess_method)
     test_set['data']  = preprocess(test_set['data'], selected_preprocess_method)
-
-    print(f"after pre-processing train mean: {train_set['data'].mean()}")
-    print(f"after pre-processing test mean: {test_set['data'].mean()}")
 
     print(f'\ncreating cross-validation sets to assess test case performance...\n')
     shuffled_set = split(train_set['data'])
@@ -224,7 +218,7 @@ def main():
     all_test_cases = range(len(test_cases))
 
     #> run each test case in our list and
-    print(f'\n running all test cases with unique hyper-parameters...\n')
+    print(f'\nrunning all test cases with unique hyper-parameters...\n')
     for i in all_test_cases:
         test_cases[i] = run_testcase(test_cases[i], train_set, test_set, knn_graph)
 
@@ -239,6 +233,7 @@ def main():
     #> write to our .csv file
     now = datetime.now().strftime("%m_%d_%H_%M_%S")
     file_name = f"recommend_k{test_cases[best_score_index]['parameters']['k']}_{test_cases[best_score_index]['parameters']['metric']}_{now}.csv"
+    # file_name = f"recommend_debug.csv" # note: keep overwriting this file instead of making so many copies of debug output
     write_output(f'../out/final/{file_name}', test_cases[best_score_index]['recommendation'])
 
     print(file_name)
