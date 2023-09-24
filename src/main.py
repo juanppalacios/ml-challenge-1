@@ -13,6 +13,7 @@ Hyperparamters:
 import time
 from datetime import datetime
 import numpy as np
+from numba import jit, cuda
 
 from rich.progress import track
 from common import *
@@ -43,23 +44,28 @@ def configure_testcases(metrics, k_values):
     KNN ALGORITHM -------------------------------
 '''
 
+@jit(target_backend='cuda')
 def euclidean_distance(x, y):
     return np.sqrt(np.sum(np.square(np.subtract(x, y))))
 
+@jit(target_backend='cuda')
 def cosine_distance(x, y):
     a = np.sum(np.multiply(x, y))
     b = np.multiply( np.sqrt(np.sum( np.square(x))), np.sqrt( np.sum( np.square(y))))
     return 1 - np.divide(a, b)
 
+@jit(target_backend='cuda')
 def jaccard_distance(x, y):
     a = np.sum(np.multiply(x, y))
     b = np.add(np.sum(np.square(x)), np.sum(np.square(y)))
     return np.divide(a, np.subtract(b, a))
 
+@jit(target_backend='cuda')
 def absolute_difference(x, y):
     # todo: what should we do here?
     return np.subtract(x, y)
 
+@jit(target_backend='cuda')
 def KNN(train_set, test_sample, metric, k):
     neighbor_distances = np.zeros(train_set['width'])
     nearest_neighbors  = np.zeros(train_set['width'], dtype = int)
@@ -150,7 +156,7 @@ def main():
     # metrics  = ['euclidean', 'cosine', 'jaccard']
     # k_values = [20, 40, 60, 80, 100]
     metrics  = ['euclidean']
-    k_values = [20, 40]
+    k_values = [20]
 
     #> create a list of all test cases to keep track of optimized parameters
     test_cases = configure_testcases(metrics, k_values)
