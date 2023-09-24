@@ -86,6 +86,13 @@ def configure_testcases(metrics, k_values):
     return test_cases
 
 '''
+    CROSS-VALIDATION ----------------------------
+'''
+
+def cross_validate(test_cases):
+    raise NotImplementedError
+
+'''
     TEST CASE RUN -------------------------------
 '''
 
@@ -128,9 +135,6 @@ def run_testcase(test_case, train_set, test_set, knn_graph):
 
     return test_case
 
-def cross_validate(test_cases):
-    raise NotImplementedError
-
 def main():
 
     print(f'readinng in our train and test sets...')
@@ -156,8 +160,8 @@ def main():
     test_scores = np.zeros(len(test_cases))
 
     #> run each test case in our list and
-    # for i in all_test_cases:
-    #     test_cases[i] = run_testcase(test_cases[i], train_set, test_set, knn_graph)
+    for i in all_test_cases:
+        test_cases[i] = run_testcase(test_cases[i], train_set, test_set, knn_graph)
 
     # todo: find our `best_score_index` a.k.a the lowest score
     # best_score_index = np.argpartition(test_cases)
