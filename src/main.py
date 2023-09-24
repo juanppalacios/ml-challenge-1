@@ -37,7 +37,6 @@ ground_truth = 5
 '''
 
 def configure_testcases(metrics, k_values):
-
     # create a list of all possible parameter combinations
     test_cases = []
     for metric in metrics:
@@ -51,6 +50,18 @@ def configure_testcases(metrics, k_values):
             test_cases.append(test_case)
 
     return test_cases
+
+def preprocess(data_set, preprocess_method):
+    if preprocess_method == 'normalizing': #> pre-processing data | y = y / |y|
+        data_set = (data_set - data_set.min()) / (data_set.max() - data_set.min())
+    elif preprocess_method == 'logarithms': # > pre-processing data | y = log(x + 1)
+        data_set = np.log1p(data_set)
+    elif preprocess_method == 'clipping': #> pre-processing data | y < 10
+        data_set = np.clip(data_set, a_min = None, a_max = 10)
+    else:
+        print(f'warning: selected method {preprocess_method} NOT implemented!')
+
+    return data_set
 
 '''
     KNN ALGORITHM -------------------------------
@@ -180,42 +191,40 @@ def run_testcase(test_case, train_set, test_set, knn_graph):
 
 def main():
 
-    print(f'readinng in our train and test sets...')
+    #> hyper-parameter lists
+    all_preprocess_methods = ['normalizing', 'logarithms', 'clipping']
+    selected_preprocess_method = 'normalizing'
+
+    metrics  = ['euclidean', 'cosine', 'jaccard']
+    k_values = [20, 40, 60, 80, 100]
+
+    print(f'\nreadinng in our train and test sets...\n')
     train_set = read_input('../train/train_set.csv')
     test_set  = read_input('../test/test_set.csv')
     knn_graph = np.zeros((train_set['width'], test_set['width']), dtype = int)
 
-    #> pre-processing data | y = log(x + 1)
-    train_set['data'] = np.log1p(train_set['data'])
-    test_set['data']  = np.log1p(test_set['data'])
+    print(f"before pre-processing train mean: {train_set['data'].mean()}")
+    print(f"before pre-processing test mean: {test_set['data'].mean()}")
 
-    #> pre-processing data | y < 10
-    # train_set['data'] = np.clip(train_set['data'], a_min = None, a_max = 10)
-    # test_set['data']  = np.clip(test_set['data'], a_min = None, a_max = 10)
+    print(f'\npre-processing our data to use {selected_preprocess_method} on our train and test sets...\n')
+    train_set['data'] = preprocess(train_set['data'], selected_preprocess_method)
+    test_set['data']  = preprocess(test_set['data'], selected_preprocess_method)
 
-    # note: using y = log(x + 1) reduces our max values to less than 5
-    # print(np.argwhere(train_set['data'] > 5))
-    # print(np.argwhere(test_set['data'] > 5))
+    print(f"after pre-processing train mean: {train_set['data'].mean()}")
+    print(f"after pre-processing test mean: {test_set['data'].mean()}")
 
-    # todo: creating our cross-validation sets should go AFTER pre-processing
-    # shuffled_set = split(train_set['data'])
-    # produceTestSet(shuffled_set)
-    # print("testing..!")
+    print(f'\ncreating cross-validation sets to assess test case performance...\n')
+    shuffled_set = split(train_set['data'])
+    # produceTestSet(shuffled_set) # note: holding off from producing these until we have our score function
 
     # exit()
-
-    #> hyper-parameter lists
-    metrics  = ['euclidean', 'cosine', 'jaccard']
-    k_values = [20, 40, 60, 80, 100]
 
     #> create a list of all test cases to keep track of optimized parameters
     test_cases = configure_testcases(metrics, k_values)
     all_test_cases = range(len(test_cases))
 
-    #> create an array of test scores for later argsorting
-    test_scores = np.zeros(len(test_cases))
-
     #> run each test case in our list and
+    print(f'\n running all test cases with unique hyper-parameters...\n')
     for i in all_test_cases:
         test_cases[i] = run_testcase(test_cases[i], train_set, test_set, knn_graph)
 
