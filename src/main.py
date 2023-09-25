@@ -10,34 +10,36 @@ Hyperparamters:
         assigned importance to neighbor based on similarity
 '''
 
-# > Priority:
-# todo: figure out how to score each test case
-# todo: work on notebook
-# todo: figure out weighted knn
-# todo: figure out how to plot performances (WCSS vs k?)
-
-import time
-from datetime import datetime
 import numpy as np
 from numba import jit, cuda
 
-# note: added this to suppress warnings
+from rich.progress import track
+from common import *
+
+# note: added this to suppress numba deprecation warnings
 import sys
 if not sys.warnoptions:
     import warnings
     warnings.simplefilter("ignore")
 
-from rich.progress import track
-from common import *
+#> cross-validation settings
+cross_validation_data_sets_exists = True
+use_cross_validation_data_sets    = False
 
+#> recommend 5 birds that were likely spotted but not tallied
 ground_truth = 5
 
 '''
     CONFIGURATION -------------------------------
 '''
 
+'''
+create a list of all possible parameter combinations
+:param
+    metrics = type of metric: euclidean, cosine, or jaccard
+    k_values = # of k
+'''
 def configure_testcases(metrics, k_values):
-    # create a list of all possible parameter combinations
     test_cases = []
     for metric in metrics:
         for k in k_values:
@@ -68,7 +70,7 @@ def preprocess(data_set, preprocess_method):
     KNN ALGORITHM -------------------------------
 '''
 
-@jit(target_backend='cuda')
+# @jit(target_backend='cuda') # note: turned off due to non-optimal solutions
 def euclidean_distance(x, y):
     return np.sqrt(np.sum(np.square(np.subtract(x, y))))
 
@@ -78,16 +80,11 @@ def cosine_distance(x, y):
     b = np.multiply( np.sqrt(np.sum( np.square(x))), np.sqrt( np.sum( np.square(y))))
     return 1 - np.divide(a, b)
 
-@jit(target_backend='cuda')
+# @jit(target_backend='cuda') # note: turned off due to non-optimal solutions
 def jaccard_distance(x, y):
     a = np.sum(np.multiply(x, y))
     b = np.add(np.sum(np.square(x)), np.sum(np.square(y)))
     return np.divide(a, np.subtract(b, a))
-
-@jit(target_backend='cuda')
-def absolute_difference(x, y):
-    # todo: what should we do here?
-    return np.subtract(x, y)
 
 @jit(target_backend='cuda')
 def KNN(train_set, test_sample, metric, k):
@@ -97,30 +94,32 @@ def KNN(train_set, test_sample, metric, k):
     for i in train_set['columns']:
         if metric == 'euclidean':
             neighbor_distances[i] = euclidean_distance(train_set['data'][:,i], test_sample)
-            nearest_index = np.argpartition(neighbor_distances, k)[:k] #> get the smallest
         if metric == 'cosine':
             neighbor_distances[i] = cosine_distance(train_set['data'][:,i], test_sample)
-            nearest_index = np.argpartition(neighbor_distances, -k)[-k:] #> get the largest
         if metric == 'jaccard':
             neighbor_distances[i] = jaccard_distance(train_set['data'][:,i], test_sample)
-            nearest_index = np.argpartition(neighbor_distances, -k)[-k:] #> get the largest
+
+    nearest_index = np.argpartition(neighbor_distances, k)[:k]
 
     for i in nearest_index:
         nearest_neighbors[i] = 1
-
-    # note: these two prints are the same for arg sort and arg partition
-    # print(f'arg partition: {neighbor_distances[nearest_neighbors == 1]}')
-    # print(f'arg sort: {neighbor_distances[np.argsort(neighbor_distances)[-k:]]}')
 
     assert np.sum(nearest_neighbors) == k
 
     return nearest_neighbors
 
+
 '''
     CROSS-VALIDATION ----------------------------
+    this section was used to for cross-validation of our hyper parameters
+    using k-fold methods
 '''
 
-# split will randomize the columns and split the trainset into five subsets.
+'''
+split will randomize the columns and split the train_set into five subsets.
+:param
+    grid = 2D matrix (train_set to be test_set)
+'''
 def split(grid):
     grid = np.transpose(grid)
     np.random.shuffle(grid)
@@ -130,6 +129,11 @@ def split(grid):
 
     return res
 
+'''
+This function was used to create tests for cross validation
+:param
+    grid = array of matrix (subsets of shuffled train_set)
+'''
 def produceTestSet(grid):
     test1 = np.concatenate((grid[0], grid[1], grid[2], grid[3]), 1)
     test2 = np.concatenate((grid[0], grid[1], grid[2], grid[4]), 1)
@@ -140,24 +144,33 @@ def produceTestSet(grid):
     res = [test1, test2, test3, test4, test5]
     index = 1
     for test in res:
-        with open(f'../test/{index}.csv', mode='w', newline='') as file:
-            writer = csv.writer(file)
+        with open(f'../train/cv_train/train_cvset_{index}.csv', mode='w', newline='') as train:
+            writer = csv.writer(train)
             writer.writerows(test)
-        index += 1
 
-def cross_validate(test_cases):
-    raise NotImplementedError
+        with open(f'../test/cv_test/test_cvset_{index}.csv', mode='w', newline='') as test:
+            writer = csv.writer(test)
+            writer.writerows(grid[index - 1])
+        index += 1
 
 '''
     TEST CASE RUN -------------------------------
+    main driver of the knn methods
+:param
+    test_case: metric & k
+    train_set: matrix
+    test_set:  matrix
+    non_changed_test_set: matrix = this is the unchanged test set, that we'll use to evaluate our hyper parameters
+    knn_graph: matrix of zeros at start
 '''
-
-def run_testcase(test_case, train_set, test_set, knn_graph):
+def run_testcase(test_case, train_set, test_set, non_changed_test_set, knn_graph):
 
     print(f"\nrunning test case {test_case['parameters']['metric']} distance with {test_case['parameters']['k']} neighbors...")
 
     test_case['recommendation'] = np.zeros(test_set['data'].shape, dtype = int)
 
+    knn_index = np.zeros((train_set['width'], test_case['parameters']['k']), dtype=int)
+    knn_centroids = np.zeros(train_set['height'])
     #> for all test_set samples/columns, choose top 5 in knn_centroids that are also 0 in test_set sample/column
     for column in track(test_set['columns']):
         knn_graph[:,column] = KNN(train_set, test_set['data'][:,column], test_case['parameters']['metric'],test_case['parameters']['k'])
@@ -181,62 +194,83 @@ def run_testcase(test_case, train_set, test_set, knn_graph):
 
         assert np.sum(test_case['recommendation'][:,column]) == ground_truth
 
-    # todo: cross-validate and get our best testcase to then write to a csv file
-    # test_case['score'] = cross_validate(test_case)
-    test_case['score'] = 1.0 # note: dummy value
+    #> cross-validate our test sets
+    if use_cross_validation_data_sets:
+        test_case['score'] = getScore(test_case['recommendation'], non_changed_test_set['data'])
+        print(f'test case score: {test_case["score"]}')
 
     return test_case
 
+'''
+    this was used to create test batch for cross-validation
+'''
+def createTests():
+
+    for i in range(1, 6):
+        test = read_input(f'../test/cv_test/test_cvset_{i}.csv')
+        test = randomize(test)
+
+        with open(f'../test/rand_test/test_randset_{i}.csv', mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerows(test['data'])
+
 def main():
 
-    #> hyper-parameter lists
+    #> tuning hyper-parameter settings
     all_preprocess_methods = ['normalizing', 'logarithms', 'clipping']
-    selected_preprocess_method = all_preprocess_methods[0]
+    selected_preprocess_method = all_preprocess_methods[1]
+    metrics  = ['euclidean', 'cosine', 'jaccard']
+    metrics  = ['cosine']
+    k_values = [20, 21, 22, 23, 24, 25, 26, 27]
+    k_values = [25]
 
-    # metrics  = ['euclidean', 'cosine', 'jaccard']
-    # k_values = [20, 40, 60, 80, 100]
-    metrics  = ['euclidean']
-    k_values = [20] # scored a 0.11010
+    if cross_validation_data_sets_exists:
+        if use_cross_validation_data_sets:
+            print(f'reading in our cross-validation train and test sets...')
+            numberOfSets = 3
+            map = readInFiles(numberOfSets)
+            assert 0 < numberOfSets and numberOfSets < 5
+        else:
+            print(f'reading in our train and test sets...')
+            train_set = read_input('../train/train_set.csv', trim_header = True)
+            test_set  = read_input('../test/test_set.csv', trim_header = True)
+            non_changed_test_set = read_input('../test/cv_test/test_cvset_2.csv')
+            numberOfSets = 1
+            assert 0 < numberOfSets and numberOfSets == 1
+    else:
+        train_set = read_input('../train/train_set.csv', trim_header = True)
+        test_set  = read_input('../test/test_set.csv', trim_header = True)
+        shuffled_set = split(train_set['data'])
+        produceTestSet(shuffled_set)
 
-    print(f'\nreadinng in our train and test sets...\n')
-    train_set = read_input('../train/train_set.csv')
-    test_set  = read_input('../test/test_set.csv')
-    knn_graph = np.zeros((train_set['width'], test_set['width']), dtype = int)
+    for ind in range(numberOfSets):
 
-    print(f'\npre-processing our data to use {selected_preprocess_method} on our train and test sets...\n')
-    train_set['data'] = preprocess(train_set['data'], selected_preprocess_method)
-    test_set['data']  = preprocess(test_set['data'], selected_preprocess_method)
+        if use_cross_validation_data_sets:
+            print(f'\ntesting cross validation set {ind + 1} of {numberOfSets}...')
+            train_set = map['train'][ind]
+            test_set  = map['test'][ind]
+            non_changed_test_set = map['answer'][ind]
 
-    print(f'\ncreating cross-validation sets to assess test case performance...\n')
-    shuffled_set = split(train_set['data'])
-    # produceTestSet(shuffled_set) # note: holding off from producing these until we have our score function
+        knn_graph = np.zeros((train_set['width'], test_set['width']), dtype = int)
 
-    # exit()
+        print(f'pre-processing our data to use {selected_preprocess_method} on our train and test sets...')
+        train_set['data'] = preprocess(train_set['data'], selected_preprocess_method)
+        test_set['data']  = preprocess(test_set['data'],  selected_preprocess_method)
 
-    #> create a list of all test cases to keep track of optimized parameters
-    test_cases = configure_testcases(metrics, k_values)
-    all_test_cases = range(len(test_cases))
+        #> create a list of all test cases to keep track of optimized parameters
+        test_cases = configure_testcases(metrics, k_values)
+        all_test_cases = range(len(test_cases))
 
-    #> run each test case in our list and
-    print(f'\nrunning all test cases with unique hyper-parameters...\n')
-    for i in all_test_cases:
-        test_cases[i] = run_testcase(test_cases[i], train_set, test_set, knn_graph)
+        #> run each test case in our list and
+        print(f'running all test cases with unique hyper-parameters...\n')
+        for i in all_test_cases:
+            test_cases[i] = run_testcase(test_cases[i], train_set, test_set, non_changed_test_set, knn_graph)
 
-    # todo: find our `best_score_index` a.k.a the lowest score
-    # best_score_index = np.argpartition(test_cases)
-    best_score_index = 0 # note: dummy value
-    # test_cases[best_score_index]['score'] = 0.0
+        best_score_index = 0
 
-    # note: debug purposes
-    print(f"debug: printing the following chosen best score: {test_cases[best_score_index]['score']}")
-
-    #> write to our .csv file
-    now = datetime.now().strftime("%m_%d_%H_%M_%S")
-    file_name = f"recommend_k{test_cases[best_score_index]['parameters']['k']}_{test_cases[best_score_index]['parameters']['metric']}_{now}.csv"
-    # file_name = f"recommend_debug.csv" # note: keep overwriting this file instead of making so many copies of debug output
-    write_output(f'../out/final/{file_name}', test_cases[best_score_index]['recommendation'])
-
-    print(file_name)
+        #> write our optimal result to a .csv file for Kaggle submission
+        file_name = f"k{test_cases[best_score_index]['parameters']['k']}_{test_cases[best_score_index]['parameters']['metric']}_{selected_preprocess_method}.csv"
+        write_output(f'../out/final/{file_name}', test_cases[best_score_index]['recommendation'])
 
 if __name__ == '__main__':
     main()

@@ -1,11 +1,18 @@
 import os
 import csv
+import random
+
 import numpy as np
 
 from numpy import genfromtxt
 
-def read_input(path : str):
-    data = np.delete(genfromtxt(path, delimiter = ',', skip_header = 1, dtype = int), obj = 0, axis = 1)
+def read_input(path : str, trim_header = False):
+
+    if trim_header:
+        data = np.delete(genfromtxt(path, delimiter = ',', skip_header = 1, dtype = int), obj = 0, axis = 1)
+    else:
+        data = genfromtxt(path, delimiter = ',', dtype = int)
+
     input = {
         'data'   : data,
         'height' : data.shape[0],
@@ -14,6 +21,21 @@ def read_input(path : str):
         'columns': range(data.shape[1])
     }
     return input
+
+def readInFiles(count):
+    map = {}
+    test = []
+    train = []
+    answer = []
+    map['test'] = test
+    map['train'] = train
+    map['answer'] = answer
+    for i in range(1, 1+count):
+        train.append(read_input(f'../train/cv_train/train_cvset_{i}.csv'))
+        test.append(read_input(f'../test/rand_test/test_randset_{i}.csv'))
+        answer.append(read_input(f'../test/cv_test/test_cvset_{i}.csv'))
+
+    return map
 
 def write_output(path : str, data):
     #> transpose and flatten our recommend set
@@ -29,52 +51,62 @@ def write_output(path : str, data):
         for i in range(len(data)):
             writer.writerow([f'\"row_{i + 1}\"', f'{data[i][0]}'])
 
+# shuffling columns for k-fold
+def randomize(data):
+
+    res = data
+    row = data['height']
+    col = data['width']
+    for i in range(col):
+        temp = []
+        for j in range(row):
+            a = res['data'][j][i]
+            if a != 0:
+                temp.append(j)
+
+        for j in range(5):
+            if len(temp) == 0:
+                break
+            choose = random.choice(temp)
+            res['data'][choose][i] = 0
+            temp.remove(choose)
+
+    return res
+
+'''
+    this was used to create test batch for cross-validation
+'''
+def createTests():
+
+    for i in range(1, 6):
+        test = read_input(f'../test/cv_test/test_cvset_{i}.csv')
+        test = randomize(test)
+
+        with open(f'../test/rand_test/test_randset_{i}.csv', mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerows(test['data'])
+
+# suggestion would be in form of matrix of 1s and 0s,
+# main evaluation function, implementing MAE evaluation metric
+def getScore(suggestion, actual):
+
+    rows = len(suggestion)
+    cols = len(suggestion[0])
+    res = 0.0
+
+    for i in range(cols):
+
+        mismatch = 0.0
+        for j in range(rows):
+
+            if suggestion[j][i] != 0 and actual[j][i] == 0:
+                mismatch += 1
+
+        res += (mismatch * 2) / 85
+    res = res / cols
+
+    return res
+
 def write_plot(path : str, data):
     # todo: this function is called after performing cross-validation to see how our tc performs
     raise NotImplementedError
-
-def defunct_main():
-    ######? below this line is the old version
-    k = 20
-    # exit_value = 1000 - 1
-    # exit_value = test_set['width'] - 1
-
-    exit()
-    knn_graph     = np.zeros((train_set['width'], test_set['width']), dtype = int)
-    knn_index     = np.zeros((train_set['width'], k), dtype = int)
-    knn_centroids = np.zeros(train_set['height'])
-
-    print(f'finding k nearest neighbors...') # note: 5 tc's costs 0.7856 seconds, 770 seconds for all tc's
-    start = time.time()
-    for column in track(test_set['columns']):
-        # knn_graph[:,column] = KNN(train_set, test_set['data'][:,column], k)
-        knn_centroids = np.zeros(train_set['height'])
-
-        #> find our index of all k 1's in `knn_graph` column
-        knn_index = np.argwhere(knn_graph[:,column] == 1)
-
-        #> find our centroids for all `train_set` rows
-        for row in train_set['rows']:
-            knn_centroids[row] = np.mean(train_set['data'][row, knn_index])
-
-        #> find our index of zero-values in a `test_set` column
-        test_sample_zero_index = np.where(test_set['data'][:,column] == 0)[0]
-
-        #> find index of largest values in our centroids AND that are zero in the `test_set` column
-        recommend_set_index = test_sample_zero_index[np.argpartition(-knn_centroids[test_sample_zero_index], ground_truth)[:ground_truth]]
-
-        for i in recommend_set_index:
-            recommend_set[i, column] = 1
-
-        assert np.sum(recommend_set[:,column]) == ground_truth
-
-        if column == exit_value:
-            break
-
-    end = time.time()
-    print(f'timelapse: {time.strftime("%H hours, %M minutes, %S seconds", time.gmtime(end - start))}')
-
-    # todo: cross-validate and get our best testcase to then write to a csv file
-
-    #> write to our .csv file
-    write_output(f'../out/final/recommend_set_{datetime.now().strftime("%m_%d_%H_%M_%S")}.csv', recommend_set)
